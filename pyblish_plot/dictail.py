@@ -12,15 +12,15 @@ def parse(filename, targets=None):
         source = file.read().decode(encoding="utf8")
 
     root = ast.parse(source, filename=filename)
-    VisitAddParent().visit(root)
+    AddParent().visit(root)
 
     visitor = VisitDict(source, targets)
     visitor.visit(root)
 
-    return visitor.op_stack()
+    return visitor.result()
 
 
-class VisitAddParent(ast.NodeVisitor):
+class AddParent(ast.NodeVisitor):
 
     def generic_visit(self, node):
         for child in ast.iter_child_nodes(node):
@@ -51,10 +51,13 @@ class VisitDict(ast.NodeVisitor):
     def __init__(self, source, targets):
         self._src = source
         self._lines = source.split("\n")
-        self._op_stack = list()
+        self._op_trace = list()
         self._targets = targets
 
         ast.NodeVisitor.__init__(self)
+
+    def result(self):
+        return self._op_trace
 
     def visit_Name(self, node):
         """Parse operation if the `Name` node identifier matches
@@ -64,7 +67,7 @@ class VisitDict(ast.NodeVisitor):
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, name, operation, entries)
-                self._op_stack.append(op)
+                self._op_trace.append(op)
         else:
             self.generic_visit(node)
 
@@ -81,12 +84,9 @@ class VisitDict(ast.NodeVisitor):
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, attr, operation, entries)
-                self._op_stack.append(op)
+                self._op_trace.append(op)
         else:
             self.generic_visit(node)
-
-    def op_stack(self):
-        return self._op_stack
 
     def parse_dict_op(self, node, parent_entry=None):
         """
