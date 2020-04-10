@@ -39,6 +39,7 @@ class VisitDict(ast.NodeVisitor):
     dict.pop(k)
     dict.clear()
     dict.copy()
+    dict.items()
     del dict[k]
     deepcopy(dict)
     """
@@ -150,7 +151,7 @@ class VisitDict(ast.NodeVisitor):
                 entries = self.parse_dict_update(OP.parent)
                 operation = self.OP_SET
 
-            elif OP.attr == "copy":
+            elif OP.attr in ("copy", "items"):
                 entries = _ALL
                 operation = self.OP_GET
 
