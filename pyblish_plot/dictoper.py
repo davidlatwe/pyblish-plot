@@ -5,7 +5,7 @@ import ast
 PY38 = sys.version_info[:2] == (3, 8)
 
 
-def parse(filename, objects, attrs):
+def parse(filename, targets=None):
     """
     """
     with open(filename, "rb") as file:
@@ -14,7 +14,7 @@ def parse(filename, objects, attrs):
     root = ast.parse(source, filename=filename)
     VisitAddParent().visit(root)
 
-    visitor = VisitDictAttrs(source, objects, attrs)
+    visitor = VisitDict(source, targets)
     visitor.visit(root)
 
     return visitor.op_stack()
@@ -28,14 +28,19 @@ class VisitAddParent(ast.NodeVisitor):
         ast.NodeVisitor.generic_visit(self, node)
 
 
-class VisitDictAttrs(ast.NodeVisitor):
+class VisitDict(ast.NodeVisitor):
     """
-    Only intrested in any change in `context.data` or `instance.data`
-    * set
-    * get
-    * update
-    * del
-    * pop
+    dict[k]
+    dict[k][K]
+    dict[k] = v
+    K In|NotIn dict|dict[k]
+    dict.update(d)
+    dict.get(k)
+    dict.pop(k)
+    dict.clear()
+    dict.copy()
+    del dict[k]
+    deepcopy(dict)
     """
 
     OP_GET = "get"
@@ -43,93 +48,80 @@ class VisitDictAttrs(ast.NodeVisitor):
     OP_DEL = "del"
     OP_TRY = "try"
 
-    def __init__(self, source, objects, attrs):
+    def __init__(self, source, targets):
         self._src = source
         self._lines = source.split("\n")
-        self._objects = objects
-        self._attrs = attrs
         self._op_stack = list()
+        self._targets = targets
+
         ast.NodeVisitor.__init__(self)
+
+    def visit_Name(self, node):
+        """Parse operation if the `Name` node identifier matches
+        """
+        name = node.id
+        if name in self._targets:
+            operation, entries = self.parse_dict_op(node)
+            if operation is not None:
+                op = DictOp(node, name, operation, entries)
+                self._op_stack.append(op)
+        else:
+            self.generic_visit(node)
+
+    def visit_Attribute(self, node):
+        """
+        """
+        all_descendant = list(ast.walk(node))
+        name = next(c for c in all_descendant if isinstance(c, ast.Name))
+        attr = ".".join(reversed([
+            c.attr for c in all_descendant if isinstance(c, ast.Attribute)
+        ] + [name.id]))
+
+        if attr in self._targets:
+            operation, entries = self.parse_dict_op(node)
+            if operation is not None:
+                op = DictOp(node, attr, operation, entries)
+                self._op_stack.append(op)
+        else:
+            self.generic_visit(node)
 
     def op_stack(self):
         return self._op_stack
 
-    def visit_Attribute(self, node):
-        if node.attr in self._attrs:
-            name = next((c for c in ast.iter_child_nodes(node)
-                         if isinstance(c, ast.Name)), None)
-
-            if name and name.id in self._objects:
-                operation, entries = self.parse_data_op(node)
-                op = DictOp(node, name.id, node.attr, operation, entries)
-                self._op_stack.append(op)
-
-        else:
-            self.generic_visit(node)
-
-    def parse_data_op(self, node, parent_entry=None):
+    def parse_dict_op(self, node, parent_entry=None):
         """
         """
         entries = None
         operation = None
         OP = node.parent
 
-        if isinstance(OP, ast.Attribute):
+        if isinstance(OP, ast.Subscript):
+            # `dict` subscription operation
 
-            if not isinstance(OP.parent, ast.Call):
-                # Assume `data` is being changed via `dict` operation,
-                # so the grandparent node must be `ast.Call` type.
-                raise Exception("Undefined operation.")
-
-            elif OP.attr == "update":
-                operation = self.OP_SET
-                entries = self.parse_dict_update(OP.parent)
-
-            elif OP.attr == "get":
-                arg = OP.parent.args[0]
-                if isinstance(arg, ast.Str):
-                    entry = arg.s
-                else:
-                    entry = self.get_source_in_call(*OP.parent.args)
-
-                operation = self.OP_TRY
-                entries = [entry]
-
-            elif OP.attr == "pop":
-                arg = OP.parent.args[0]
-                if isinstance(arg, ast.Str):
-                    entry = arg.s
-                else:
-                    entry = self.get_source_in_call(arg)
-
-                operation = self.OP_DEL
-                entries = [entry]
-
-            elif OP.attr == "clear":
-                operation = self.OP_DEL
-                entries = _ALL
-
-        elif isinstance(OP, ast.Subscript):
             slicer = OP.slice.value
-
             if isinstance(slicer, ast.Str):
                 entry = slicer.s
             else:
                 entry = self.get_source_in_slice(slicer)
 
-            operation, entries, _ = self.parse_data_op(OP, parent_entry=entry)
+            operation, entries = self.parse_dict_op(OP, parent_entry=entry)
             entries = [entry] if entries is None else entries
+            operation = operation or self.OP_GET
 
-        elif isinstance(OP, ast.Compare) and parent_entry is None:
-            # Handling for case like `"foo" in instance.data`
+        # Operations on `dict` subscription
+
+        elif (isinstance(OP, ast.Compare)
+                and isinstance(OP.ops[0], (ast.In, ast.NotIn))):
+            # key In or NotIn `dict`
+
             if isinstance(OP.left, ast.Str):
                 entry = OP.left.s
             else:
                 entry = self.get_source_in_compare(OP.left,
                                                    OP.ops[0],
                                                    OP.comparators[0])
-            operation = self.OP_TRY
             entries = [entry]
+            operation = self.OP_TRY
 
         elif isinstance(OP, ast.Assign):
 
@@ -137,15 +129,59 @@ class VisitDictAttrs(ast.NodeVisitor):
                 operation = self.OP_GET
 
             elif node in OP.targets:
+                if parent_entry is None:  # Object/attribute re-assigned
+                    entries = _ALL
                 operation = self.OP_SET
 
         elif isinstance(OP, ast.Delete):
+            if parent_entry is None:
+                entries = _ALL
             operation = self.OP_DEL
 
-        # done
+        # Functions of `dict`
 
-        if operation is None:
-            operation = self.OP_GET
+        elif isinstance(OP, ast.Attribute) and isinstance(OP.parent, ast.Call):
+            # `OP` node should be a `dict` function and is being called
+
+            if OP.attr == "update":
+                entries = self.parse_dict_update(OP.parent)
+                operation = self.OP_SET
+
+            elif OP.attr == "copy":
+                entries = _ALL
+                operation = self.OP_GET
+
+            elif OP.attr == "get":
+                arg = OP.parent.args[0]
+                if isinstance(arg, ast.Str):
+                    entry = arg.s
+                else:
+                    entry = self.get_source_in_call(*OP.parent.args)
+                entries = [entry]
+                operation = self.OP_TRY
+
+            elif OP.attr == "pop":
+                arg = OP.parent.args[0]
+                if isinstance(arg, ast.Str):
+                    entry = arg.s
+                else:
+                    entry = self.get_source_in_call(arg)
+                entries = [entry]
+                operation = self.OP_DEL
+
+            elif OP.attr == "clear":
+                entries = _ALL
+                operation = self.OP_DEL
+
+        elif isinstance(OP, ast.Call):
+            if ((isinstance(OP.func, ast.Name)
+                 and OP.func.id in ("copy", "deepcopy"))
+                or (isinstance(OP.func, ast.Attribute)
+                    and OP.func.attr in ("copy", "deepcopy"))):
+                entries = _ALL
+                operation = self.OP_GET
+
+        # done
 
         if parent_entry is not None and entries is not None:
             entries = ["%s.%s" % (parent_entry, e) for e in entries]
@@ -156,6 +192,8 @@ class VisitDictAttrs(ast.NodeVisitor):
     def parse_dict_update(self, node):
         """
         """
+        entries = None
+
         if node.keywords:
             entries = [k.arg for k in node.keywords]
 
@@ -171,11 +209,16 @@ class VisitDictAttrs(ast.NodeVisitor):
                         entries.append(self.get_source_in_dict(k, v))
 
             elif isinstance(arg, ast.Call):
-                # Assume mapping type class init
-                entries = self.parse_dict_update(arg)
 
-            else:
-                raise Exception("Undefined operation.")
+                if ((isinstance(arg.func, ast.Name)
+                     and arg.func.id in ("dict", "OrderedDict"))
+                    or (isinstance(arg.func, ast.Attribute)
+                        and arg.func.attr == "OrderedDict")):
+                    # Assume mapping type class init
+                    entries = self.parse_dict_update(arg)
+
+        if entries is None:
+            entries = [self.get_source_in_call(arg)]
 
         return entries
 
@@ -190,16 +233,7 @@ class VisitDictAttrs(ast.NodeVisitor):
 
     def get_source_in_compare(self, left, op, comparator):
         """"""
-        sep = {ast.Eq: "==",
-               ast.NotEq: "!=",
-               ast.Lt: "<",
-               ast.LtE: "<=",
-               ast.Gt: ">",
-               ast.GtE: ">=",
-               ast.Is: "is",
-               ast.IsNot: "is ",
-               ast.In: "in",
-               ast.NotIn: "not "}[type(op)]
+        sep = {ast.In: "in", ast.NotIn: "not "}[type(op)]
 
         lines = self._lines[left.lineno - 1: comparator.lineno]
         lines[-1] = lines[-1][:comparator.col_offset - 1]
@@ -269,13 +303,13 @@ if PY38:
     def get_source_segment(self, *args):
         return Code(ast.get_source_segment(self._src, args[0]))
 
-    VisitDictAttrs.get_source_in_dict = get_source_segment
-    VisitDictAttrs.get_source_in_compare = get_source_segment
-    VisitDictAttrs.get_source_in_call = get_source_segment
-    VisitDictAttrs.get_source_in_slice = get_source_segment
+    VisitDict.get_source_in_dict = get_source_segment
+    VisitDict.get_source_in_compare = get_source_segment
+    VisitDict.get_source_in_call = get_source_segment
+    VisitDict.get_source_in_slice = get_source_segment
 
 
-_ALL = object()
+_ALL = ["*"]
 
 
 class Code(str):
@@ -284,18 +318,16 @@ class Code(str):
 
 class DictOp(object):
 
-    def __init__(self, node, obj, attr, operation, entries):
-        self.obj = obj
-        self.attr = attr
+    def __init__(self, node, name, operation, entries):
+        self.name = name
         self.lineno = node.lineno
         self.column = node.col_offset
         self.op = operation
         self.entries = entries
 
     def __repr__(self):
-        return ("DictOp(%s.%s, L%d col %d, %s [%s]"
-                % (self.obj,
-                   self.attr,
+        return ("DictOp(%s, L%d col %d, %s [%s]"
+                % (self.name,
                    self.lineno,
                    self.column,
                    self.op,
