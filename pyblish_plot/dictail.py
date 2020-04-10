@@ -5,7 +5,7 @@ import ast
 PY38 = sys.version_info[:2] == (3, 8)
 
 
-def parse(filename, targets=None):
+def parse(filename, subjects):
     """
     """
     with open(filename, "rb") as file:
@@ -14,7 +14,7 @@ def parse(filename, targets=None):
     root = ast.parse(source, filename=filename)
     AddParent().visit(root)
 
-    visitor = VisitDict(source, targets)
+    visitor = VisitDict(source, subjects)
     visitor.visit(root)
 
     return visitor.result()
@@ -48,11 +48,11 @@ class VisitDict(ast.NodeVisitor):
     OP_DEL = "del"
     OP_TRY = "try"
 
-    def __init__(self, source, targets):
+    def __init__(self, source, subjects):
         self._src = source
         self._lines = source.split("\n")
         self._op_trace = list()
-        self._targets = targets
+        self._subjects = subjects
 
         ast.NodeVisitor.__init__(self)
 
@@ -63,7 +63,7 @@ class VisitDict(ast.NodeVisitor):
         """Parse operation if the `Name` node identifier matches
         """
         name = node.id
-        if name in self._targets:
+        if name in self._subjects:
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, name, operation, entries)
@@ -80,7 +80,7 @@ class VisitDict(ast.NodeVisitor):
             c.attr for c in all_descendant if isinstance(c, ast.Attribute)
         ] + [name.id]))
 
-        if attr in self._targets:
+        if attr in self._subjects:
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, attr, operation, entries)
