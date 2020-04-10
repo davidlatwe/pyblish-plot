@@ -74,10 +74,13 @@ class VisitDict(ast.NodeVisitor):
     def visit_Attribute(self, node):
         """
         """
-        all_descendant = list(ast.walk(node))
-        name = next(c for c in all_descendant if isinstance(c, ast.Name))
+        all_children = list(ast.walk(node))
+        name = next((c for c in all_children if isinstance(c, ast.Name)), None)
+        if name is None:
+            return
+
         attr = ".".join(reversed([
-            c.attr for c in all_descendant if isinstance(c, ast.Attribute)
+            c.attr for c in all_children if isinstance(c, ast.Attribute)
         ] + [name.id]))
 
         if attr in self._subjects:
