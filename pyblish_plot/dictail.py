@@ -48,10 +48,10 @@ class VisitDict(ast.NodeVisitor):
     deepcopy(dict)
     """
 
-    OP_GET = "get"
-    OP_SET = "set"
-    OP_DEL = "del"
-    OP_TRY = "try"
+    OP_GET = "!"
+    OP_SET = "+"
+    OP_DEL = "-"
+    OP_TRY = "?"
 
     def __init__(self, source, identifiers):
         self._src = source  # For `ast.get_source_segment` in PY38
