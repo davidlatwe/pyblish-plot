@@ -50,7 +50,7 @@ class VisitDict(ast.NodeVisitor):
     OP_TRY = "try"
 
     def __init__(self, source, subjects):
-        self._src = source
+        self._src = source  # For `ast.get_source_segment` in PY38
         self._lines = source.split("\n")
         self._op_trace = list()
         self._subjects = subjects
