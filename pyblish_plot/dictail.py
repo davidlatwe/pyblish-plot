@@ -340,3 +340,15 @@ class DictOp(object):
                    self.column,
                    self.op,
                    ", ".join(self.entries)))
+
+    def copy(self):
+        mock = type("nodeMock",
+                    (object,),
+                    {"lineno": 0,
+                     "line_offset": 0,
+                     "col_offset": 0})
+        new_op = DictOp(mock, self.name, self.op, list(self.entries))
+        new_op.lineno = self.lineno
+        new_op.column = self.column
+
+        return new_op
