@@ -13,14 +13,14 @@ def plot_publish(families, targets=None, identifiers=None, keys=None):
     plugins = logic.plugins_by_families(plugins, families)
     plugins = logic.plugins_by_targets(plugins, targets)
 
-    traces = list()
+    reports = list()
 
     for plugin in plugins:
-        trace = plot_plugin(plugin, identifiers, keys)
-        if trace:
-            traces.append((plugin, trace))
+        report = plot_plugin(plugin, identifiers, keys)
+        if report:
+            reports.append(report)
 
-    return traces
+    return reports
 
 
 def plot_plugin(plugin, identifiers=None, keys=None):
@@ -33,6 +33,7 @@ def plot_plugin(plugin, identifiers=None, keys=None):
     filename = plugin.__module__
 
     trace = dictail.parse(source, filename, identifiers, offset=lineno)
+    report = TraceReport()
 
     if keys:
         filtered_trace = list()
@@ -43,6 +44,71 @@ def plot_plugin(plugin, identifiers=None, keys=None):
                 new_op.entries = matched
                 filtered_trace.append(new_op)
 
-        return filtered_trace
-    else:
-        return trace
+        trace = filtered_trace
+
+    report.parse(plugin, trace)
+
+    return report
+
+
+class TraceReport(object):
+
+    def __init__(self):
+        # Plugin
+        self.module = None
+        self.name = None
+        self.context = None
+        self.order = None
+        self.hosts = []
+        self.families = []
+        self.targets = []
+        # Keys Operations
+        self.trace = []
+
+    def __bool__(self):
+        return bool(self.trace)
+
+    def __repr__(self):
+        type = "api.ContextPlugin" if self.context else "api.InstancePlugin"
+        traces = "        ".join(
+            "{op} {id}: [ {keys} ]  ...... L{no}\n".format(
+                no=op.lineno,
+                id=op.name,
+                op=op.op,
+                keys=", ".join(op.entries))
+            for op in self.trace
+        )
+
+        return """
+class {name}({type}):  {module}
+
+    order = {order}
+    hosts = {hosts}
+    families = {families}
+    targets = {targets}
+
+    Operations:
+        {traces}
+        """.format(
+            name=self.name,
+            type=type,
+            module=self.module,
+            order=self.order,
+            hosts=self.hosts,
+            families=self.families,
+            targets=self.targets,
+            traces=traces,
+        )
+
+    def parse(self, plugin, trace):
+        # Plugin
+        self.module = next(c.__module__ for c in plugin.mro()
+                           if c.__module__ != "pyblish.plugin")
+        self.name = plugin.__name__
+        self.context = isinstance(plugin, api.ContextPlugin)
+        self.order = plugin.order
+        self.hosts = plugin.hosts
+        self.families = plugin.families
+        self.targets = plugin.targets
+        # Keys Operations
+        self.trace = trace
