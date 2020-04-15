@@ -1,5 +1,9 @@
 
-from .plot import plot
+from .plot import (
+    plot_publish,
+    plot_plugin,
+)
+
 from .dictail import (
     parse,
     VisitDict,
@@ -9,7 +13,9 @@ from .dictail import (
 
 
 __all__ = [
-    "plot",
+    "plot_publish",
+    "plot_plugin",
+
     "parse",
     "VisitDict",
     "Code",
