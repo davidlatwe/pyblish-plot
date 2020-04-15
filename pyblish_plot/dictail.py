@@ -9,9 +9,9 @@ def parse(source, filename, subjects, offset=0):
     """
     """
     root = ast.parse(source, filename=filename)
-    AddParent().visit(root)
-    if offset:
-        ast.increment_lineno(root, offset)
+
+    visitor = SetParentAndOffset(offset)
+    visitor.visit(root)
 
     visitor = VisitDict(source, subjects)
     visitor.visit(root)
@@ -19,11 +19,16 @@ def parse(source, filename, subjects, offset=0):
     return visitor.result()
 
 
-class AddParent(ast.NodeVisitor):
+class SetParentAndOffset(ast.NodeVisitor):
+
+    def __init__(self, offset):
+        self.offset = offset
 
     def generic_visit(self, node):
         for child in ast.iter_child_nodes(node):
             child.parent = node
+        if "lineno" in node._attributes:
+            node.line_offset = self.offset
         ast.NodeVisitor.generic_visit(self, node)
 
 
@@ -323,7 +328,7 @@ class DictOp(object):
 
     def __init__(self, node, name, operation, entries):
         self.name = name
-        self.lineno = node.lineno
+        self.lineno = node.lineno + node.line_offset
         self.column = node.col_offset
         self.op = operation
         self.entries = entries
