@@ -105,7 +105,7 @@ class {name}({type}):  {module}
         self.module = next(c.__module__ for c in plugin.mro()
                            if c.__module__ != "pyblish.plugin")
         self.name = plugin.__name__
-        self.context = isinstance(plugin, api.ContextPlugin)
+        self.context = issubclass(plugin, api.ContextPlugin)
         self.order = plugin.order
         self.hosts = plugin.hosts
         self.families = plugin.families
