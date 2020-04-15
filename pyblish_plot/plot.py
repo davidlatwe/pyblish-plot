@@ -1,6 +1,7 @@
 
 from pyblish import api, logic
 from . import dictail
+import inspect
 
 
 def plot(families, plugins=None, targets=None, subjects=None):
@@ -12,7 +13,14 @@ def plot(families, plugins=None, targets=None, subjects=None):
     traces = list()
 
     for plugin in plugins:
-        trace = dictail.parse(plugin.__module__, subjects=subjects)
+
+        cls = next(c for c in plugin.mro() if c.__module__ != "pyblish.plugin")
+        source, lineno = inspect.getsourcelines(cls)
+        source = "".join(source).strip()  # Strip to avoid unexpected indent
+        lineno -= 1
+        filename = plugin.__module__
+
+        trace = dictail.parse(source, filename, subjects, offset=lineno)
         traces.append((plugin, trace))
 
     return traces

@@ -5,14 +5,13 @@ import ast
 PY38 = sys.version_info[:2] == (3, 8)
 
 
-def parse(filename, subjects):
+def parse(source, filename, subjects, offset=0):
     """
     """
-    with open(filename, "rb") as file:
-        source = file.read().decode(encoding="utf8")
-
     root = ast.parse(source, filename=filename)
     AddParent().visit(root)
+    if offset:
+        ast.increment_lineno(root, offset)
 
     visitor = VisitDict(source, subjects)
     visitor.visit(root)
