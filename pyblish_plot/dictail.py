@@ -5,7 +5,7 @@ import ast
 PY38 = sys.version_info[:2] == (3, 8)
 
 
-def parse(source, filename, subjects, offset=0):
+def parse(source, filename, identifiers, offset=0):
     """
     """
     root = ast.parse(source, filename=filename)
@@ -13,7 +13,7 @@ def parse(source, filename, subjects, offset=0):
     visitor = SetParentAndOffset(offset)
     visitor.visit(root)
 
-    visitor = VisitDict(source, subjects)
+    visitor = VisitDict(source, identifiers)
     visitor.visit(root)
 
     return visitor.result()
@@ -53,11 +53,11 @@ class VisitDict(ast.NodeVisitor):
     OP_DEL = "del"
     OP_TRY = "try"
 
-    def __init__(self, source, subjects):
+    def __init__(self, source, identifiers):
         self._src = source  # For `ast.get_source_segment` in PY38
         self._lines = source.split("\n")
         self._op_trace = list()
-        self._subjects = subjects
+        self._identifiers = identifiers
 
         ast.NodeVisitor.__init__(self)
 
@@ -68,7 +68,7 @@ class VisitDict(ast.NodeVisitor):
         """Parse operation if the `Name` node identifier matches
         """
         name = node.id
-        if name in self._subjects:
+        if name in self._identifiers:
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, name, operation, entries)
@@ -88,7 +88,7 @@ class VisitDict(ast.NodeVisitor):
             c.attr for c in all_children if isinstance(c, ast.Attribute)
         ] + [name.id]))
 
-        if attr in self._subjects:
+        if attr in self._identifiers:
             operation, entries = self.parse_dict_op(node)
             if operation is not None:
                 op = DictOp(node, attr, operation, entries)
