@@ -87,7 +87,7 @@ class A(api.InstancePlugin):  __main__
 
 Although we get the result by parsing plugin's source code into Python AST without actually running a real publish, but reading import statements and class attributes in plugin which may involves class inheritance and code evaluating (complicate!), hence we still need `pyblish.api.discover` to find plugins, and plugins will be imported.
 
-So, if you wish to plot without host (DCC App), move host dependent codes like import statements from top level scope into function scope.
+So, if you wish to plot without host (DCC App), move host dependent codes like import statements from top level scope into function scope. Or the plugin will be ignored due to `ImportError`.
 
 For example, from this
 ```python
