@@ -5,7 +5,17 @@ import inspect
 
 
 def plot_publish(families, targets=None, identifiers=None, keys=None):
+    """Parse and plot all plugins by families and targets
 
+    Args:
+        families (list): List of interested instance family names
+        targets (list, optional): List of target names
+        identifiers (list, optional): List of interested dict names, take
+            ["context.data", "instance.data"] if not provided.
+        keys (list, optional): List of interested key names, return all dict
+            keys if not provided.
+
+    """
     if not targets:
         targets = ["default"] + api.registered_targets()
 
@@ -24,6 +34,16 @@ def plot_publish(families, targets=None, identifiers=None, keys=None):
 
 
 def plot_plugin(plugin, identifiers=None, keys=None):
+    """Parse plugin from source and plot dict operations
+
+    Args:
+        plugin (pyblish.api.Plugin): A plugin class object to plot
+        identifiers (list, optional): List of interested dict names, take
+            ["context.data", "instance.data"] if not provided.
+        keys (list, optional): List of interested key names, return all dict
+            keys if not provided.
+
+    """
     identifiers = identifiers or ["context.data", "instance.data"]
 
     cls = next(c for c in plugin.mro() if c.__module__ != "pyblish.plugin")
